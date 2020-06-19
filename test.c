@@ -34,7 +34,8 @@ int main() {
         perror("tls init");
         exit(EXIT_FAILURE);
     }
-    if (setsockopt(sock, SOL_TLS, TLS_LUA, "abc", sizeof("abc")) == -1) {
+    char* script="print(\"hello world\")";
+    if (setsockopt(sock, SOL_TLS, TLS_LUA, script, strlen(script) + 1) == -1) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }

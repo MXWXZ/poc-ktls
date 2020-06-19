@@ -43,6 +43,10 @@
 
 #include <net/tls.h>
 
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+
 MODULE_AUTHOR("Mellanox Technologies");
 MODULE_DESCRIPTION("Transport Layer Security Support");
 MODULE_LICENSE("Dual BSD/GPL");
@@ -564,18 +568,33 @@ out:
 }
 
 #define TLS_LUA 99
+static DEFINE_MUTEX(mtx);
+static lua_State* L;
+#define raise_err(msg) pr_warn("[lua] %s - %s\n", __func__, msg);
 
 static int do_tls_lua(char __user *optval, unsigned int optlen)
 {
     int rc = 0;
     char* file;
     file = kmalloc(optlen, GFP_ATOMIC);
+    if (!file) {
+        raise_err("no memory");
+        return -ENOMEM;
+    }
     rc = copy_from_user(file, optval, optlen);
     if (rc) {
         rc = -EFAULT;
         goto end;
     }
-    printk("%s", file);
+
+    mutex_lock(&mtx);
+    if (luaL_dostring(L, file)) {
+        raise_err(lua_tostring(L, -1));
+        mutex_unlock(&mtx);
+        rc = -ECANCELED;
+        goto end;
+    }
+    mutex_unlock(&mtx);
 
 end:
     kfree(file);
@@ -930,6 +949,13 @@ static int __init tls_register(void)
 	tls_device_init();
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
+    L = luaL_newstate();
+	if (L == NULL) {
+		raise_err("no memory");
+		return -ENOMEM;
+	}
+	luaL_openlibs(L);
+
 	return 0;
 }
 
@@ -937,6 +963,7 @@ static void __exit tls_unregister(void)
 {
 	tcp_unregister_ulp(&tcp_tls_ulp_ops);
 	tls_device_cleanup();
+    lua_close(L);
 }
 
 module_init(tls_register);
